@@ -6,12 +6,29 @@ authors = [
     {name = "powerwook",email = "powerwook@naver.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-]
 
-[tool.poetry]
-packages = [{include = "backend", from = "src"}]
+
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+# Web Scraping & Server
+requests = "^2.32.3"
+beautifulsoup4 = "^4.12.3"
+
+[tool.black]
+line-length = 88
+target-version = ['py312']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
 
 
 [build-system]
