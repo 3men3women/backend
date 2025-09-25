@@ -1,24 +1,24 @@
-[project]
+[tool.poetry]
 name = "backend"
 version = "0.1.0"
-description = ""
-authors = [
-    {name = "powerwook",email = "powerwook@naver.com"}
-]
+description = "My Django backend project"
+authors = ["powerwook <powerwook@naver.com>"]
 readme = "README.md"
 
-
-
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "^3.11"
+requests = "2.32.3"
+beautifulsoup4 = "4.12.3"
+Django = "4.2.24"
+djangorestframework = "3.16.1"
+django-cors-headers = "4.9.0"
+mysqlclient = "2.2.7"
+djangorestframework-simplejwt = "5.5.1"
 
-# Web Scraping & Server
-requests = "^2.32.3"
-beautifulsoup4 = "^4.12.3"
 
 [tool.black]
 line-length = 88
-target-version = ['py312']
+target-version = ['py311']
 
 [tool.isort]
 profile = "black"
