@@ -13,30 +13,36 @@ from .serializers import EmotionRecordSerializer, EmotionRecordListSerializer
 class EmotionRecordListCreateView(generics.ListCreateAPIView):
     """
     감정 기록 목록 조회 및 생성 API
-    GET: 로그인한 사용자의 감정 기록 목록 조회
+    GET: 로그인한 사용자의 감정 기록 목록 조회 (관리자는 전체 조회 가능)
     POST: 새로운 감정 기록 생성
     """
     permission_classes = [IsAuthenticated]
-    
+
     def get_serializer_class(self):
         if self.request.method == 'GET':
             return EmotionRecordListSerializer
         return EmotionRecordSerializer
-    
+
     def get_queryset(self):
-        """현재 로그인한 사용자의 감정 기록만 반환"""
-        queryset = EmotionRecord.objects.filter(user=self.request.user)
-        
+        # 관리자는 전체 조회 가능, 일반 사용자는 자기 기록만
+        qs = EmotionRecord.objects.all() if (
+            self.request.user.is_staff or self.request.user.is_superuser
+        ) else EmotionRecord.objects.filter(user=self.request.user)
+
+        # 관리자가 특정 user_id를 지정해서 필터링
+        user_id = self.request.query_params.get("user_id")
+        if user_id and (self.request.user.is_staff or self.request.user.is_superuser):
+            qs = qs.filter(user_id=user_id)
+
         # 년월 필터링 (선택사항)
-        year = self.request.query_params.get('year')
-        month = self.request.query_params.get('month')
-        
+        year = self.request.query_params.get("year")
+        month = self.request.query_params.get("month")
         if year and month:
-            queryset = queryset.filter(date__year=year, date__month=month)
+            qs = qs.filter(date__year=year, date__month=month)
         elif year:
-            queryset = queryset.filter(date__year=year)
-            
-        return queryset
+            qs = qs.filter(date__year=year)
+
+        return qs
 
 class EmotionRecordDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
