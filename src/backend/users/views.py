@@ -1,12 +1,16 @@
 import requests
+from urllib.parse import urlencode
+
 from django.conf import settings
 from django.shortcuts import redirect
 from django.contrib.auth import get_user_model
+
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .serializers import RegisterSerializer, LoginSerializer
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+
+from .serializers import RegisterSerializer, LoginSerializer
 
 User = get_user_model()
 
@@ -23,7 +27,7 @@ class LoginView(generics.GenericAPIView):
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data["user"]  # LoginSerializer에서 user 반환하도록 해야 함
+        user = serializer.validated_data["user"]
 
         refresh = RefreshToken.for_user(user)
         return Response({
@@ -40,48 +44,60 @@ class KakaoLoginView(APIView):
         kakao_auth_url = (
             "https://kauth.kakao.com/oauth/authorize"
             f"?client_id={settings.KAKAO_REST_API_KEY}"
-            f"&redirect_uri={settings.KAKAO_REDIRECT_URI}"
+            f"&redirect_uri={settings.KAKAO_REDIRECT_URI}"  # ← 여기는 백엔드 콜백
             f"&response_type=code"
         )
         return redirect(kakao_auth_url)
 
 
-# 카카오 로그인 Callback → JWT 발급
+# 카카오 로그인 Callback → JWT 발급 후 프론트로 리다이렉트
 class KakaoCallbackView(APIView):
     def get(self, request):
         code = request.GET.get("code")
+        if not code:
+            return Response({"detail": "code가 없습니다."}, status=400)
+
+        # 1) 인가코드로 토큰 교환
         token_url = "https://kauth.kakao.com/oauth/token"
         data = {
             "grant_type": "authorization_code",
             "client_id": settings.KAKAO_REST_API_KEY,
-            "redirect_uri": settings.KAKAO_REDIRECT_URI,
+            "redirect_uri": settings.KAKAO_REDIRECT_URI,  # 백엔드 콜백과 동일해야 함
             "code": code,
             "client_secret": settings.KAKAO_CLIENT_SECRET,
         }
-
         token_response = requests.post(token_url, data=data).json()
         access_token = token_response.get("access_token")
+        if not access_token:
+            return Response({"detail": "카카오 토큰 교환 실패", "raw": token_response}, status=400)
 
-        # 사용자 정보 가져오기
+        # 2) 사용자 정보 조회
         profile_url = "https://kapi.kakao.com/v2/user/me"
         headers = {"Authorization": f"Bearer {access_token}"}
         profile_response = requests.get(profile_url, headers=headers).json()
 
         kakao_id = profile_response.get("id")
-        kakao_account = profile_response.get("kakao_account", {})
-        email = kakao_account.get("email")
+        kakao_account = profile_response.get("kakao_account", {}) or {}
+        email = kakao_account.get("email") or ""
 
-        # User 생성 or 조회
-        user, created = User.objects.get_or_create(
+        # 3) 서비스 사용자 생성/조회
+        user, _ = User.objects.get_or_create(
             username=f"kakao_{kakao_id}",
-            defaults={"email": email if email else ""}
+            defaults={"email": email}
         )
 
-        # ✅ JWT 발급
+        # 4) JWT 발급
         refresh = RefreshToken.for_user(user)
-        return Response({
-            "msg": "카카오 로그인 성공",
+        access_jwt = str(refresh.access_token)
+        refresh_jwt = str(refresh)
+
+        # 5) ★ 프론트로 리다이렉트
+        #    개발 편의상 쿼리로 토큰을 보냄 (운영에선 HttpOnly 쿠키 추천)
+        params = urlencode({
+            "login": "success",
             "user_id": user.id,
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-        }, status=status.HTTP_200_OK)
+            "access": access_jwt,
+            "refresh": refresh_jwt,
+        })
+        # 원하는 프론트 경로로 변경: /home
+        return redirect(f"http://localhost:3000/home?{params}")
