@@ -15,6 +15,14 @@ django-cors-headers = "4.9.0"
 mysqlclient = "2.2.7"
 djangorestframework-simplejwt = "5.5.1"
 dotenv = "^0.9.9"
+numpy = "^1.26"
+opencv-python = "4.8.1.78"
+mediapipe = "^0.10.21"
+pandas = "^2.3.2"
+scipy = "^1.16.2"
+fastapi = "^0.117.1"
+uvicorn = "^0.37.0"
+python-socketio = "^5.13.0"
 
 
 [tool.black]
