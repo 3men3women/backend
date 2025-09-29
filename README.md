@@ -19,4 +19,4 @@ ordering = ['-date'] → 최신 순으로 자동 정렬.<br>
 4. 헬퍼 메서드<br>
 __str__ : "username - 날짜 (감정)" 형태로 표시.<br>
 emotion_emoji : 감정의 이모지(😊)만 반환.<br>
-emotion_name : 감정의 한글 이름(행복)만 반환.
+emotion_name : 감정의 한글 이름(행복)만 반환..
