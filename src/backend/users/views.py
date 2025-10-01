@@ -5,7 +5,7 @@ from django.conf import settings
 from django.shortcuts import redirect
 from django.contrib.auth import get_user_model
 
-from rest_framework import generics, status
+from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -14,15 +14,32 @@ from .serializers import RegisterSerializer, LoginSerializer
 
 User = get_user_model()
 
-# 회원가입
+# ✅ 회원가입 + JWT 발급
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
+    permission_classes = [permissions.AllowAny]  # 인증 불필요
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+
+        # JWT 토큰 발급
+        refresh = RefreshToken.for_user(user)
+
+        return Response({
+            "msg": "회원가입 성공",
+            "user_id": user.id,
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+        }, status=status.HTTP_201_CREATED)
 
 
-# 일반 로그인 → JWT 발급
+# ✅ 일반 로그인 → JWT 발급
 class LoginView(generics.GenericAPIView):
     serializer_class = LoginSerializer
+    permission_classes = [permissions.AllowAny]
 
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
@@ -38,20 +55,24 @@ class LoginView(generics.GenericAPIView):
         }, status=status.HTTP_200_OK)
 
 
-# 카카오 로그인 URL
+# ✅ 카카오 로그인 URL
 class KakaoLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
     def get(self, request):
         kakao_auth_url = (
             "https://kauth.kakao.com/oauth/authorize"
             f"?client_id={settings.KAKAO_REST_API_KEY}"
-            f"&redirect_uri={settings.KAKAO_REDIRECT_URI}"  # ← 여기는 백엔드 콜백
+            f"&redirect_uri={settings.KAKAO_REDIRECT_URI}"
             f"&response_type=code"
         )
         return redirect(kakao_auth_url)
 
 
-# 카카오 로그인 Callback → JWT 발급 후 프론트로 리다이렉트
+# ✅ 카카오 로그인 Callback → JWT 발급 후 프론트로 리다이렉트
 class KakaoCallbackView(APIView):
+    permission_classes = [permissions.AllowAny]
+
     def get(self, request):
         code = request.GET.get("code")
         if not code:
@@ -62,7 +83,7 @@ class KakaoCallbackView(APIView):
         data = {
             "grant_type": "authorization_code",
             "client_id": settings.KAKAO_REST_API_KEY,
-            "redirect_uri": settings.KAKAO_REDIRECT_URI,  # 백엔드 콜백과 동일해야 함
+            "redirect_uri": settings.KAKAO_REDIRECT_URI,
             "code": code,
             "client_secret": settings.KAKAO_CLIENT_SECRET,
         }
@@ -91,13 +112,11 @@ class KakaoCallbackView(APIView):
         access_jwt = str(refresh.access_token)
         refresh_jwt = str(refresh)
 
-        # 5) ★ 프론트로 리다이렉트
-        #    개발 편의상 쿼리로 토큰을 보냄 (운영에선 HttpOnly 쿠키 추천)
+        # 5) 프론트로 리다이렉트
         params = urlencode({
             "login": "success",
             "user_id": user.id,
             "access": access_jwt,
             "refresh": refresh_jwt,
         })
-        # 원하는 프론트 경로로 변경: /home
         return redirect(f"http://localhost:3000/home?{params}")

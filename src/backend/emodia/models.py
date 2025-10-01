@@ -1,10 +1,28 @@
-from django.db import models 
+from django.db import models
 from django.contrib.auth.models import User
 
+
+class Sports(models.Model):
+    """스포츠 종류"""
+    name = models.CharField(max_length=50)
+
+    def __str__(self):
+        return self.name
+
+
+class EmotionVideo(models.Model):
+    """스포츠별로 연결된 영상"""
+    sports = models.ForeignKey(Sports, related_name="videos", on_delete=models.CASCADE)
+    video = models.FileField(upload_to="videos/")  # media/videos/ 폴더 안에 저장
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.sports.name} - {self.video.name}"
+
+
 class EmotionRecord(models.Model):
-    """
-    사용자의 일별 감정 기록을 저장하는 모델
-    """
+    """사용자의 일별 감정 기록"""
+
     EMOTION_CHOICES = [
         ('sad', '😰 우울'),
         ('tired', '🥱 지침'),
@@ -16,7 +34,7 @@ class EmotionRecord(models.Model):
         ('happy', '😊 행복'),
     ]
 
-    # 점수 매핑
+    # 감정 → 점수 매핑
     EMOTION_SCORES = {
         'sad': 0,
         'tired': 1,
@@ -28,40 +46,39 @@ class EmotionRecord(models.Model):
         'happy': 7,
     }
 
-    SPORTS_CHOICES = [
-        (1, "목풀기"),
-        (2, "헬스"),
-        (3, "축구"),
-        (4, "농구"),
-        (5, "수영"),
-    ]
+    # 점수 → 스포츠 매핑
+    SCORE_TO_SPORTS = {
+        0: 1,  # sad → 목풀기
+        1: 1,  # tired → 목풀기
+        2: 2,  # anxious → 헬스
+        3: 3,  # angry → 축구
+        4: 4,  # neutral → 농구
+        5: 5,  # calm → 수영
+        6: 2,  # excited → 헬스
+        7: 1,  # happy → 목풀기
+    }
 
     user = models.ForeignKey(
-        User, 
+        User,
         on_delete=models.CASCADE,
         related_name='emotion_records',
         verbose_name='사용자'
     )
-    date = models.DateField(verbose_name='날짜', help_text='감정을 기록한 날짜')
+    date = models.DateField(verbose_name='날짜')
     emotion = models.CharField(max_length=20, choices=EMOTION_CHOICES, verbose_name='감정 상태')
-    emotion_score = models.IntegerField(default=0, verbose_name="감정 점수")  # ✅ 추가
-    memo = models.TextField(blank=True, null=True, verbose_name='감정 메모', help_text='오늘 하루는 어땠나요? 간단한 힘들평을 남겨보세요...')
+    emotion_score = models.IntegerField(default=0, verbose_name="감정 점수")
+    memo = models.TextField(blank=True, null=True, verbose_name='메모')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성 시간')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정 시간')
 
-    sports = models.IntegerField(
-        choices=SPORTS_CHOICES,
-        blank=True,
-        null=True,
-        verbose_name="교정 기록",
-        help_text="오늘 한 운동교정"
-    )
+    # sports_id 를 정수로 저장
+    sports = models.IntegerField(blank=True, null=True, verbose_name="자동 매핑된 스포츠")
 
     class Meta:
         unique_together = ['user', 'date']
+        ordering = ['-date']
         verbose_name = '감정 기록'
         verbose_name_plural = '감정 기록들'
-        ordering = ['-date']
 
     def __str__(self):
         emotion_display = dict(self.EMOTION_CHOICES).get(self.emotion, self.emotion)
@@ -69,15 +86,23 @@ class EmotionRecord(models.Model):
 
     @property
     def emotion_emoji(self):
-        emotion_display = dict(self.EMOTION_CHOICES).get(self.emotion, '')
-        return emotion_display.split(' ')[0] if emotion_display else ''
+        return dict(self.EMOTION_CHOICES).get(self.emotion, '').split(' ')[0]
 
-    @property  
+    @property
     def emotion_name(self):
-        emotion_display = dict(self.EMOTION_CHOICES).get(self.emotion, '')
-        return emotion_display.split(' ')[1] if len(emotion_display.split(' ')) > 1 else ''
+        parts = dict(self.EMOTION_CHOICES).get(self.emotion, '').split(' ')
+        return parts[1] if len(parts) > 1 else ''
 
     def save(self, *args, **kwargs):
-        # ✅ 감정에 따른 점수를 자동으로 저장
+        # ✅ 감정 → 점수
         self.emotion_score = self.EMOTION_SCORES.get(self.emotion, 0)
+
+        # ✅ 점수 → 스포츠 자동 매핑
+        self.sports = self.SCORE_TO_SPORTS.get(self.emotion_score, None)
+
         super().save(*args, **kwargs)
+
+    @property
+    def related_videos(self):
+        """이 감정 기록에 연결된 영상들"""
+        return EmotionVideo.objects.filter(sports_id=self.sports)

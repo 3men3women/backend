@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'emodia',
     'users',
     'corsheaders',
+    'profiles',
 ]
 
 MIDDLEWARE = [
@@ -112,7 +113,6 @@ AUTH_PASSWORD_VALIDATORS = [
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework.authentication.SessionAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
 }
@@ -159,3 +159,6 @@ load_dotenv(BASE_DIR / ".env")  # <- 이 줄 추가
 KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY")
 KAKAO_REDIRECT_URI = "http://127.0.0.1:8000/users/kakao/callback/"
 KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET", "")
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
