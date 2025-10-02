@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 
 class Sports(models.Model):
     """스포츠 종류"""
-    name = models.CharField(max_length=50)
+    name = models.CharField(max_length=50, unique=True)
 
     def __str__(self):
         return self.name
@@ -46,15 +46,15 @@ class EmotionRecord(models.Model):
         'happy': 7,
     }
 
-    # 점수 → 스포츠 매핑
+    # 점수 → 스포츠 매핑 (Sports.id와 매핑)
     SCORE_TO_SPORTS = {
         0: 1,  # sad → 목풀기
         1: 1,  # tired → 목풀기
-        2: 2,  # anxious → 헬스
-        3: 3,  # angry → 축구
-        4: 4,  # neutral → 농구
-        5: 5,  # calm → 수영
-        6: 2,  # excited → 헬스
+        2: 2,  # anxious → 어깨풀기
+        3: 1,  # angry → 목풀기
+        4: 2,  # neutral → 어깨풀기
+        5: 2,  # calm → 어깨풀기
+        6: 2,  # excited → 어깨풀기
         7: 1,  # happy → 목풀기
     }
 
@@ -71,8 +71,15 @@ class EmotionRecord(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성 시간')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정 시간')
 
-    # sports_id 를 정수로 저장
-    sports = models.IntegerField(blank=True, null=True, verbose_name="자동 매핑된 스포츠")
+    # ✅ FK로 변경 (드롭다운 지원)
+    sports = models.ForeignKey(
+        Sports,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="records",
+        verbose_name="자동 매핑된 스포츠"
+    )
 
     class Meta:
         unique_together = ['user', 'date']
@@ -97,12 +104,13 @@ class EmotionRecord(models.Model):
         # ✅ 감정 → 점수
         self.emotion_score = self.EMOTION_SCORES.get(self.emotion, 0)
 
-        # ✅ 점수 → 스포츠 자동 매핑
-        self.sports = self.SCORE_TO_SPORTS.get(self.emotion_score, None)
+        # ✅ 점수 → 스포츠 자동 매핑 (FK 저장)
+        sports_id = self.SCORE_TO_SPORTS.get(self.emotion_score, None)
+        self.sports = Sports.objects.filter(id=sports_id).first() if sports_id else None
 
         super().save(*args, **kwargs)
 
     @property
     def related_videos(self):
         """이 감정 기록에 연결된 영상들"""
-        return EmotionVideo.objects.filter(sports_id=self.sports)
+        return EmotionVideo.objects.filter(sports=self.sports)
