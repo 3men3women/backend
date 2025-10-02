@@ -5,7 +5,7 @@ from rest_framework.validators import UniqueValidator
 
 User = get_user_model()
 
-# ✅ 회원가입 Serializer (password2 제거, email + password 기반)
+# ✅ 회원가입 Serializer (password2 추가, email + password 기반)
 class RegisterSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(
         required=True,
@@ -16,12 +16,22 @@ class RegisterSerializer(serializers.ModelSerializer):
         required=True,
         validators=[validate_password],
     )
+    password2 = serializers.CharField(  # 비밀번호 확인 필드 추가
+        write_only=True,
+        required=True
+    )
 
     class Meta:
         model = User
-        fields = ("username", "email", "password")
+        fields = ("username", "email", "password", "password2")
+
+    def validate(self, data):
+        if data["password"] != data["password2"]:
+            raise serializers.ValidationError({"password2": "비밀번호가 일치하지 않습니다."})
+        return data
 
     def create(self, validated_data):
+        validated_data.pop("password2")  # 확인용 필드는 제거
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data["email"],
