@@ -85,7 +85,7 @@ def get_emotion_by_date(request, date_str):
             {'message': '해당 날짜에 기록된 감정이 없습니다.'}, 
             status=status.HTTP_404_NOT_FOUND
         )
-
+    ##ff
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_or_update_emotion(request):
