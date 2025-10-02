@@ -1,11 +1,11 @@
-from django.contrib.auth import get_user_model, authenticate
+from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
 User = get_user_model()
 
-# 회원가입
+# ✅ 회원가입 Serializer (password2 제거, email + password 기반)
 class RegisterSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(
         required=True,
@@ -16,21 +16,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         required=True,
         validators=[validate_password],
     )
-    password2 = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = User
-        fields = ("username", "password", "password2", "email")
-
-    def validate(self, data):
-        if data["password"] != data["password2"]:
-            raise serializers.ValidationError(
-                {"password": "Password fields didn't match."}
-            )
-        return data
+        fields = ("username", "email", "password")
 
     def create(self, validated_data):
-        validated_data.pop("password2")  # password2는 필요 없음
         user = User.objects.create_user(
             username=validated_data["username"],
             email=validated_data["email"],
@@ -39,16 +30,22 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 
 
-# 로그인
+# ✅ 로그인 Serializer (email + password 기반)
 class LoginSerializer(serializers.Serializer):
-    username = serializers.CharField(required=True)
+    email = serializers.EmailField(required=True)
     password = serializers.CharField(required=True, write_only=True)
 
     def validate(self, data):
-        user = authenticate(**data)
-        if not user:
-            raise serializers.ValidationError(
-                {"error": "Unable to log in with provided credentials."}
-            )
-        data["user"] = user  # ✅ views.py에서 JWT 발급할 때 이걸 사용
+        email = data.get("email")
+        password = data.get("password")
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "존재하지 않는 이메일입니다."})
+
+        if not user.check_password(password):
+            raise serializers.ValidationError({"password": "비밀번호가 올바르지 않습니다."})
+
+        data["user"] = user
         return data
