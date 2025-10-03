@@ -6,9 +6,15 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from datetime import date, datetime
 from django.db.models import Q
+from django.utils import timezone
 
-from .models import EmotionRecord
-from .serializers import EmotionRecordSerializer, EmotionRecordListSerializer
+from .models import EmotionRecord, WorkoutSession, PoseFrame
+from .serializers import (
+    EmotionRecordSerializer,
+    EmotionRecordListSerializer,
+    WorkoutSessionSerializer,
+    PoseFrameSerializer
+)
 
 class EmotionRecordListCreateView(generics.ListCreateAPIView):
     """
@@ -165,5 +171,144 @@ def get_emotion_calendar(request, year, month):
         'month': month,
         'emotions': calendar_data
     })
+
+
+# ========== 운동 세션 & 포즈 좌표 API ==========
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def start_workout_session(request):
+    """운동 세션 시작"""
+    serializer = WorkoutSessionSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def end_workout_session(request, session_id):
+    """운동 세션 종료"""
+    try:
+        session = WorkoutSession.objects.get(id=session_id, user=request.user)
+    except WorkoutSession.DoesNotExist:
+        return Response({'error': '세션을 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
+
+    session.end_time = timezone.now()
+    duration_seconds = (session.end_time - session.start_time).total_seconds()
+    session.duration = int(duration_seconds)
+    session.save()
+
+    serializer = WorkoutSessionSerializer(session)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_pose_frame(request):
+    """실시간 포즈 좌표 전송 + 피드백 반환"""
+    serializer = PoseFrameSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # 저장
+    pose_frame = serializer.save()
+
+    # 교정 피드백 생성
+    feedback = generate_feedback(pose_frame.keypoints)
+    pose_frame.feedback = feedback
+    pose_frame.save()
+
+    return Response({
+        'id': pose_frame.id,
+        'feedback': feedback
+    }, status=status.HTTP_201_CREATED)
+
+
+def generate_feedback(keypoints):
+    """
+    목 왼쪽 스트레칭 동작 피드백
+    keypoints: [{name: 'nose', x: 0.5, y: 0.3, score: 0.9}, ...]
+    """
+    feedback = {
+        'status': 'good',
+        'messages': [],
+        'corrections': {},
+        'angles': {},
+        'has_warnings': False
+    }
+
+    try:
+        # 필수 키포인트 추출
+        nose = next((k for k in keypoints if k['name'] == 'nose'), None)
+        left_ear = next((k for k in keypoints if k['name'] == 'left_ear'), None)
+        right_ear = next((k for k in keypoints if k['name'] == 'right_ear'), None)
+        left_shoulder = next((k for k in keypoints if k['name'] == 'left_shoulder'), None)
+        right_shoulder = next((k for k in keypoints if k['name'] == 'right_shoulder'), None)
+
+        if not all([nose, left_shoulder, right_shoulder]):
+            feedback['status'] = 'warning'
+            feedback['messages'].append('얼굴과 어깨가 잘 보이지 않습니다')
+            return feedback
+
+        # 1. 어깨 수평 체크 (어깨는 평행해야 함)
+        shoulder_y_diff = abs(left_shoulder['y'] - right_shoulder['y'])
+        if shoulder_y_diff > 0.15:  # 임계값을 높여서 자연스러운 기울기 허용
+            feedback['has_warnings'] = True
+            feedback['messages'].append('⚠️ 어깨를 수평으로 유지하세요')
+            feedback['corrections']['shoulders'] = 'level'
+
+        # 2. 머리 기울기 체크 (코가 왼쪽 어깨 방향으로 이동해야 함)
+        shoulder_center_x = (left_shoulder['x'] + right_shoulder['x']) / 2
+        nose_offset = nose['x'] - shoulder_center_x
+
+        feedback['angles']['nose_offset'] = round(nose_offset, 3)
+
+        # 왼쪽으로 기울이는 동작
+        if nose_offset < -0.04:  # 코가 왼쪽으로 이동
+            tilt_amount = abs(nose_offset)
+            if tilt_amount > 0.09:  # 충분히 기울임
+                feedback['messages'].append('✓ 좋습니다! 목 스트레칭이 잘 되고 있습니다')
+            elif tilt_amount > 0.06:  # 적당히 기울임
+                feedback['messages'].append('✓ 조금 더 천천히 당겨보세요')
+            else:  # 약간 기울임
+                feedback['has_warnings'] = True
+                feedback['messages'].append('→ 머리를 왼쪽으로 더 기울이세요')
+        elif nose_offset > 0.04:  # 반대 방향
+            feedback['has_warnings'] = True
+            feedback['messages'].append('⚠️ 반대 방향입니다. 왼쪽으로 기울이세요')
+        else:  # 중립
+            feedback['has_warnings'] = True
+            feedback['messages'].append('→ 머리를 왼쪽 어깨 방향으로 천천히 기울이세요')
+
+        # 3. 귀 위치로 과도한 기울기 방지
+        if left_ear and right_ear:
+            ear_y_diff = left_ear['y'] - right_ear['y']
+            if ear_y_diff > 0.25:  # 왼쪽 귀가 너무 아래로 (임계값 상향)
+                feedback['has_warnings'] = True
+                feedback['messages'].append('⚠️ 너무 많이 기울였습니다. 천천히 돌아오세요')
+
+        # 최종 status 결정: 경고가 하나라도 있으면 warning
+        if feedback['has_warnings']:
+            feedback['status'] = 'warning'
+        else:
+            feedback['status'] = 'good'
+
+    except Exception as e:
+        feedback['status'] = 'warning'
+        feedback['messages'].append(f'인식 오류: {str(e)}')
+
+    return feedback
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_workout_sessions(request):
+    """사용자의 운동 세션 목록"""
+    sessions = WorkoutSession.objects.filter(user=request.user)
+    serializer = WorkoutSessionSerializer(sessions, many=True)
+    return Response(serializer.data)
+
 
 # Create your views here.

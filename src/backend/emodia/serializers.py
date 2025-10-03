@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import EmotionRecord, EmotionVideo
+from .models import EmotionRecord, EmotionVideo, WorkoutSession, PoseFrame, Sports
 
 
 class EmotionVideoSerializer(serializers.ModelSerializer):
@@ -97,3 +97,33 @@ class EmotionRecordListSerializer(serializers.ModelSerializer):
             'sports',
             'sports_display',
         ]
+
+
+class WorkoutSessionSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    sports_name = serializers.CharField(source='sports.name', read_only=True)
+
+    class Meta:
+        model = WorkoutSession
+        fields = ['id', 'user', 'username', 'sports', 'sports_name', 'start_time', 'end_time', 'duration']
+        read_only_fields = ['id', 'user', 'start_time']
+
+    def validate_sports(self, value):
+        """sports가 유효한 Sports 객체인지 확인"""
+        if not value:
+            raise serializers.ValidationError("스포츠를 선택해주세요.")
+        if not Sports.objects.filter(id=value.id).exists():
+            raise serializers.ValidationError("존재하지 않는 스포츠입니다.")
+        return value
+
+    def create(self, validated_data):
+        user = self.context['request'].user
+        validated_data['user'] = user
+        return super().create(validated_data)
+
+
+class PoseFrameSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PoseFrame
+        fields = ['id', 'session', 'timestamp', 'keypoints', 'feedback']
+        read_only_fields = ['id', 'feedback']
