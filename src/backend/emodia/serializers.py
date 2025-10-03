@@ -127,3 +127,11 @@ class PoseFrameSerializer(serializers.ModelSerializer):
         model = PoseFrame
         fields = ['id', 'session', 'timestamp', 'keypoints', 'feedback']
         read_only_fields = ['id', 'feedback']
+
+
+class SportsSerializer(serializers.ModelSerializer):
+    videos = EmotionVideoSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Sports
+        fields = ['id', 'name', 'videos']

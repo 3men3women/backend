@@ -8,12 +8,13 @@ from datetime import date, datetime
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import EmotionRecord, WorkoutSession, PoseFrame
+from .models import EmotionRecord, WorkoutSession, PoseFrame, Sports
 from .serializers import (
     EmotionRecordSerializer,
     EmotionRecordListSerializer,
     WorkoutSessionSerializer,
-    PoseFrameSerializer
+    PoseFrameSerializer,
+    SportsSerializer
 )
 
 class EmotionRecordListCreateView(generics.ListCreateAPIView):
@@ -308,6 +309,15 @@ def get_workout_sessions(request):
     """사용자의 운동 세션 목록"""
     sessions = WorkoutSession.objects.filter(user=request.user)
     serializer = WorkoutSessionSerializer(sessions, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_sports_list(request):
+    """Sports 목록 및 관련 비디오 조회"""
+    sports = Sports.objects.all()
+    serializer = SportsSerializer(sports, many=True, context={'request': request})
     return Response(serializer.data)
 
 

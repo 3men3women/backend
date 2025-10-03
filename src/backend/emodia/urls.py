@@ -26,4 +26,7 @@ urlpatterns = [
 
     # 포즈 좌표 전송
     path('pose/submit/', views.submit_pose_frame, name='pose-submit'),
+
+    # Sports 목록 조회
+    path('sports/', views.get_sports_list, name='sports-list'),
 ]
