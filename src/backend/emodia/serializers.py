@@ -5,17 +5,32 @@ from .models import EmotionRecord, EmotionVideo, WorkoutSession, PoseFrame, Spor
 
 class EmotionVideoSerializer(serializers.ModelSerializer):
     # video를 절대 URL로 반환
-    video = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
+    sports_name = serializers.CharField(source='sports.name', read_only=True, allow_null=True)
 
     class Meta:
         model = EmotionVideo
-        fields = ["id", "video", "created_at"]
+        fields = [
+            "id",
+            "video",
+            "video_url",
+            "difficulty",
+            "body_part",
+            "exercise_type",
+            "duration_minutes",
+            "original_filename",
+            "sports",
+            "sports_name",
+            "created_at"
+        ]
 
-    def get_video(self, obj):
+    def get_video_url(self, obj):
         request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(obj.video.url)  # 절대 경로 반환
-        return obj.video.url
+        if obj.video:
+            if request:
+                return request.build_absolute_uri(obj.video.url)  # 절대 경로 반환
+            return obj.video.url
+        return None
 
 
 class EmotionRecordSerializer(serializers.ModelSerializer):

@@ -8,13 +8,14 @@ from datetime import date, datetime
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import EmotionRecord, WorkoutSession, PoseFrame, Sports
+from .models import EmotionRecord, WorkoutSession, PoseFrame, Sports, EmotionVideo
 from .serializers import (
     EmotionRecordSerializer,
     EmotionRecordListSerializer,
     WorkoutSessionSerializer,
     PoseFrameSerializer,
-    SportsSerializer
+    SportsSerializer,
+    EmotionVideoSerializer
 )
 
 class EmotionRecordListCreateView(generics.ListCreateAPIView):
@@ -319,6 +320,61 @@ def get_sports_list(request):
     sports = Sports.objects.all()
     serializer = SportsSerializer(sports, many=True, context={'request': request})
     return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_videos_list(request):
+    """
+    운동 영상 목록 조회 API
+    필터링 옵션:
+    - difficulty: 난이도 (초급, 중급, 고급, 자세교정)
+    - body_part: 부위 (전신, 목, 어깨, 목어깨, 등, 골반, 코어)
+    - exercise_type: 운동 종류 (스트레칭, 요가, 필라테스, 운동 등)
+    - duration_min: 최소 시간(분)
+    - duration_max: 최대 시간(분)
+    """
+    videos = EmotionVideo.objects.all()
+
+    # 필터링
+    difficulty = request.query_params.get('difficulty')
+    if difficulty:
+        videos = videos.filter(difficulty=difficulty)
+
+    body_part = request.query_params.get('body_part')
+    if body_part:
+        videos = videos.filter(body_part=body_part)
+
+    exercise_type = request.query_params.get('exercise_type')
+    if exercise_type:
+        videos = videos.filter(exercise_type=exercise_type)
+
+    duration_min = request.query_params.get('duration_min')
+    if duration_min:
+        videos = videos.filter(duration_minutes__gte=int(duration_min))
+
+    duration_max = request.query_params.get('duration_max')
+    if duration_max:
+        videos = videos.filter(duration_minutes__lte=int(duration_max))
+
+    # 정렬
+    ordering = request.query_params.get('ordering', 'difficulty')
+    videos = videos.order_by(ordering)
+
+    serializer = EmotionVideoSerializer(videos, many=True, context={'request': request})
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_video_detail(request, video_id):
+    """특정 영상 상세 조회"""
+    try:
+        video = EmotionVideo.objects.get(id=video_id)
+        serializer = EmotionVideoSerializer(video, context={'request': request})
+        return Response(serializer.data)
+    except EmotionVideo.DoesNotExist:
+        return Response({'error': '영상을 찾을 수 없습니다.'}, status=status.HTTP_404_NOT_FOUND)
 
 
 # Create your views here.

@@ -29,4 +29,8 @@ urlpatterns = [
 
     # Sports 목록 조회
     path('sports/', views.get_sports_list, name='sports-list'),
+
+    # 영상 목록 및 상세 조회
+    path('videos/', views.get_videos_list, name='videos-list'),
+    path('videos/<int:video_id>/', views.get_video_detail, name='video-detail'),
 ]

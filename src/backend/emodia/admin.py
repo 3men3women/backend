@@ -9,36 +9,122 @@ from .models import (
 
 @admin.register(Sports)
 class SportsAdmin(admin.ModelAdmin):
-    list_display = ("id", "name")
+    list_display = ("id", "name", "video_count", "record_count")
     search_fields = ("name",)
+
+    def video_count(self, obj):
+        return obj.videos.count()
+    video_count.short_description = '영상 수'
+
+    def record_count(self, obj):
+        return obj.records.count()
+    record_count.short_description = '기록 수'
 
 
 @admin.register(EmotionVideo)
 class EmotionVideoAdmin(admin.ModelAdmin):
-    list_display = ("id", "sports", "video", "created_at")
-    list_filter = ("sports",)
-    search_fields = ("sports__name",)
+    list_display = ("id", "difficulty", "body_part", "exercise_type", "duration_minutes", "video_preview", "sports", "created_at")
+    list_filter = ("difficulty", "body_part", "exercise_type", "duration_minutes", "sports")
+    search_fields = ("original_filename", "exercise_type", "body_part")
+    readonly_fields = ("created_at", "video_preview_large")
+
+    fieldsets = (
+        ('영상 정보', {
+            'fields': ('video', 'video_preview_large', 'original_filename')
+        }),
+        ('분류', {
+            'fields': ('difficulty', 'body_part', 'exercise_type', 'duration_minutes', 'sports')
+        }),
+        ('타임스탬프', {
+            'fields': ('created_at',)
+        }),
+    )
+
+    def video_preview(self, obj):
+        if obj.video:
+            return format_html('<a href="{}" target="_blank">🎥 영상 보기</a>', obj.video.url)
+        return '-'
+    video_preview.short_description = '영상'
+
+    def video_preview_large(self, obj):
+        if obj.video:
+            return format_html(
+                '<video width="640" height="360" controls><source src="{}" type="video/mp4">Your browser does not support the video tag.</video>',
+                obj.video.url
+            )
+        return '-'
+    video_preview_large.short_description = '영상 미리보기'
 
 
 @admin.register(EmotionRecord)
 class EmotionRecordAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "date", "emotion", "emotion_score", "sports", "created_at")
-    list_filter = ("emotion", "sports")
-    search_fields = ("user__username", "memo")
+    list_display = ("id", "user", "date", "emotion_display", "emotion_score", "intensity", "sports", "mood_after", "created_at")
+    list_filter = ("emotion", "sports", "date", "intensity")
+    search_fields = ("user__username", "memo", "voice_of_mind")
+    readonly_fields = ("emotion_score", "created_at", "updated_at")
+
+    fieldsets = (
+        ('기본 정보', {
+            'fields': ('user', 'date', 'emotion', 'emotion_score')
+        }),
+        ('감정 상세', {
+            'fields': ('intensity', 'tags', 'voice_of_mind')
+        }),
+        ('운동 관련', {
+            'fields': ('sports', 'mood_after')
+        }),
+        ('메모', {
+            'fields': ('memo',)
+        }),
+        ('타임스탬프', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+    def emotion_display(self, obj):
+        return f"{obj.emotion_emoji} {obj.emotion_name}"
+    emotion_display.short_description = '감정'
 
 
 @admin.register(WorkoutSession)
 class WorkoutSessionAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "sports", "start_time", "end_time", "duration")
-    list_filter = ("sports",)
+    list_display = ("id", "user", "sports", "start_time", "end_time", "duration_display", "pose_frame_count")
+    list_filter = ("sports", "start_time")
     search_fields = ("user__username",)
+    readonly_fields = ("start_time",)
+
+    def duration_display(self, obj):
+        if obj.duration:
+            minutes = obj.duration // 60
+            seconds = obj.duration % 60
+            return f"{minutes}분 {seconds}초"
+        return "-"
+    duration_display.short_description = '운동 시간'
+
+    def pose_frame_count(self, obj):
+        return obj.pose_frames.count()
+    pose_frame_count.short_description = '포즈 프레임 수'
 
 
 @admin.register(PoseFrame)
 class PoseFrameAdmin(admin.ModelAdmin):
-    list_display = ("id", "session", "timestamp", "has_ratings")
-    search_fields = ("session__id",)
-    list_filter = ("session__sports",)
+    list_display = ("id", "session_info", "timestamp_display", "has_feedback", "has_ratings")
+    search_fields = ("session__id", "session__user__username")
+    list_filter = ("session__sports", "session__start_time")
+
+    def session_info(self, obj):
+        return f"Session #{obj.session.id} - {obj.session.user.username}"
+    session_info.short_description = '세션'
+
+    def timestamp_display(self, obj):
+        return f"{obj.timestamp:.1f}초"
+    timestamp_display.short_description = '타임스탬프'
+
+    def has_feedback(self, obj):
+        if obj.feedback:
+            return format_html('<span style="color: blue;">✓</span>')
+        return '-'
+    has_feedback.short_description = '피드백'
 
     def has_ratings(self, obj):
         count = obj.ratings.count()
