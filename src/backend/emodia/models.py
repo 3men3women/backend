@@ -68,6 +68,13 @@ class EmotionRecord(models.Model):
     emotion = models.CharField(max_length=20, choices=EMOTION_CHOICES, verbose_name='감정 상태')
     emotion_score = models.IntegerField(default=0, verbose_name="감정 점수")
     memo = models.TextField(blank=True, null=True, verbose_name='메모')
+
+    # ✅ 24.07.29 추가 필드 (StartPage 6단계)
+    intensity = models.IntegerField(default=50, null=True, blank=True, verbose_name='감정 강도')
+    tags = models.JSONField(default=list, null=True, blank=True, verbose_name='태그')
+    mood_after = models.CharField(max_length=50, null=True, blank=True, verbose_name='운동 후 기분')
+    voice_of_mind = models.TextField(null=True, blank=True, verbose_name='마음의 소리')
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='생성 시간')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='수정 시간')
 

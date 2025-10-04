@@ -45,9 +45,20 @@ class EmotionRecordSerializer(serializers.ModelSerializer):
             'sports_display',
             'created_at',
             'updated_at',
-            'videos',   # 👈 새 필드
+            'videos',
+            # ✅ 24.07.29 추가 필드
+            'intensity',
+            'tags',
+            'mood_after',
+            'voice_of_mind',
         ]
         read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'emotion_score']
+        extra_kwargs = {
+            'intensity': {'required': False, 'allow_null': True},
+            'tags': {'required': False, 'allow_null': True},
+            'mood_after': {'required': False, 'allow_null': True},
+            'voice_of_mind': {'required': False, 'allow_null': True},
+        }
 
     def create(self, validated_data):
         user = self.context['request'].user
@@ -59,19 +70,6 @@ class EmotionRecordSerializer(serializers.ModelSerializer):
         if value > date.today():
             raise serializers.ValidationError("미래 날짜는 기록할 수 없습니다.")
         return value
-
-    def validate(self, data):
-        user = self.context['request'].user
-        date = data.get('date')
-        if self.instance:
-            existing = EmotionRecord.objects.filter(user=user, date=date).exclude(id=self.instance.id)
-        else:
-            existing = EmotionRecord.objects.filter(user=user, date=date)
-        if existing.exists():
-            raise serializers.ValidationError({
-                'date': '이미 해당 날짜에 감정을 기록했습니다. 수정하려면 기존 기록을 편집해주세요.'
-            })
-        return data
 
     def get_videos(self, obj):
         """sports_id 기준으로 EmotionVideo 조회"""
