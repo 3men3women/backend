@@ -217,8 +217,9 @@ def submit_pose_frame(request):
     # 저장
     pose_frame = serializer.save()
 
-    # 교정 피드백 생성
-    feedback = generate_feedback(pose_frame.keypoints)
+    # 운동 타입에 따른 피드백 생성
+    exercise_type = request.data.get('exercise_type', 'neck_left')
+    feedback = generate_feedback(pose_frame.keypoints, exercise_type)
     pose_frame.feedback = feedback
     pose_frame.save()
 
@@ -228,11 +229,25 @@ def submit_pose_frame(request):
     }, status=status.HTTP_201_CREATED)
 
 
-def generate_feedback(keypoints):
+def generate_feedback(keypoints, exercise_type='neck_left'):
     """
-    목 왼쪽 스트레칭 동작 피드백
-    keypoints: [{name: 'nose', x: 0.5, y: 0.3, score: 0.9}, ...]
+    운동 타입별 자세 피드백
+    exercise_type: 'neck_left', 'neck_right', 'shoulder_left', 'shoulder_right'
     """
+    if exercise_type == 'neck_left':
+        return feedback_neck_left(keypoints)
+    elif exercise_type == 'neck_right':
+        return feedback_neck_right(keypoints)
+    elif exercise_type == 'shoulder_left':
+        return feedback_shoulder_left(keypoints)
+    elif exercise_type == 'shoulder_right':
+        return feedback_shoulder_right(keypoints)
+    else:
+        return feedback_neck_left(keypoints)  # 기본값
+
+
+def feedback_neck_left(keypoints):
+    """목 왼쪽 스트레칭 피드백"""
     feedback = {
         'status': 'good',
         'messages': [],
@@ -242,7 +257,6 @@ def generate_feedback(keypoints):
     }
 
     try:
-        # 필수 키포인트 추출
         nose = next((k for k in keypoints if k['name'] == 'nose'), None)
         left_ear = next((k for k in keypoints if k['name'] == 'left_ear'), None)
         right_ear = next((k for k in keypoints if k['name'] == 'right_ear'), None)
@@ -254,48 +268,211 @@ def generate_feedback(keypoints):
             feedback['messages'].append('얼굴과 어깨가 잘 보이지 않습니다')
             return feedback
 
-        # 1. 어깨 수평 체크 (어깨는 평행해야 함)
+        # 어깨 수평 체크
         shoulder_y_diff = abs(left_shoulder['y'] - right_shoulder['y'])
-        if shoulder_y_diff > 0.15:  # 임계값을 높여서 자연스러운 기울기 허용
+        if shoulder_y_diff > 0.15:
             feedback['has_warnings'] = True
             feedback['messages'].append('⚠️ 어깨를 수평으로 유지하세요')
-            feedback['corrections']['shoulders'] = 'level'
 
-        # 2. 머리 기울기 체크 (코가 왼쪽 어깨 방향으로 이동해야 함)
+        # 머리 왼쪽 기울기 체크
         shoulder_center_x = (left_shoulder['x'] + right_shoulder['x']) / 2
         nose_offset = nose['x'] - shoulder_center_x
-
         feedback['angles']['nose_offset'] = round(nose_offset, 3)
 
-        # 왼쪽으로 기울이는 동작
-        if nose_offset < -0.04:  # 코가 왼쪽으로 이동
+        if nose_offset < -0.04:  # 왼쪽으로 기울임
             tilt_amount = abs(nose_offset)
-            if tilt_amount > 0.09:  # 충분히 기울임
+            if tilt_amount > 0.09:
                 feedback['messages'].append('✓ 좋습니다! 목 스트레칭이 잘 되고 있습니다')
-            elif tilt_amount > 0.06:  # 적당히 기울임
+            elif tilt_amount > 0.06:
                 feedback['messages'].append('✓ 조금 더 천천히 당겨보세요')
-            else:  # 약간 기울임
+            else:
                 feedback['has_warnings'] = True
                 feedback['messages'].append('→ 머리를 왼쪽으로 더 기울이세요')
-        elif nose_offset > 0.04:  # 반대 방향
+        elif nose_offset > 0.04:
             feedback['has_warnings'] = True
             feedback['messages'].append('⚠️ 반대 방향입니다. 왼쪽으로 기울이세요')
-        else:  # 중립
+        else:
             feedback['has_warnings'] = True
             feedback['messages'].append('→ 머리를 왼쪽 어깨 방향으로 천천히 기울이세요')
 
-        # 3. 귀 위치로 과도한 기울기 방지
+        # 과도한 기울기 방지
         if left_ear and right_ear:
             ear_y_diff = left_ear['y'] - right_ear['y']
-            if ear_y_diff > 0.25:  # 왼쪽 귀가 너무 아래로 (임계값 상향)
+            if ear_y_diff > 0.25:
                 feedback['has_warnings'] = True
                 feedback['messages'].append('⚠️ 너무 많이 기울였습니다. 천천히 돌아오세요')
 
-        # 최종 status 결정: 경고가 하나라도 있으면 warning
         if feedback['has_warnings']:
             feedback['status'] = 'warning'
+
+    except Exception as e:
+        feedback['status'] = 'warning'
+        feedback['messages'].append(f'인식 오류: {str(e)}')
+
+    return feedback
+
+
+def feedback_neck_right(keypoints):
+    """목 오른쪽 스트레칭 피드백"""
+    feedback = {
+        'status': 'good',
+        'messages': [],
+        'corrections': {},
+        'angles': {},
+        'has_warnings': False
+    }
+
+    try:
+        nose = next((k for k in keypoints if k['name'] == 'nose'), None)
+        left_ear = next((k for k in keypoints if k['name'] == 'left_ear'), None)
+        right_ear = next((k for k in keypoints if k['name'] == 'right_ear'), None)
+        left_shoulder = next((k for k in keypoints if k['name'] == 'left_shoulder'), None)
+        right_shoulder = next((k for k in keypoints if k['name'] == 'right_shoulder'), None)
+
+        if not all([nose, left_shoulder, right_shoulder]):
+            feedback['status'] = 'warning'
+            feedback['messages'].append('얼굴과 어깨가 잘 보이지 않습니다')
+            return feedback
+
+        # 어깨 수평 체크
+        shoulder_y_diff = abs(left_shoulder['y'] - right_shoulder['y'])
+        if shoulder_y_diff > 0.15:
+            feedback['has_warnings'] = True
+            feedback['messages'].append('⚠️ 어깨를 수평으로 유지하세요')
+
+        # 머리 오른쪽 기울기 체크
+        shoulder_center_x = (left_shoulder['x'] + right_shoulder['x']) / 2
+        nose_offset = nose['x'] - shoulder_center_x
+        feedback['angles']['nose_offset'] = round(nose_offset, 3)
+
+        if nose_offset > 0.04:  # 오른쪽으로 기울임
+            tilt_amount = abs(nose_offset)
+            if tilt_amount > 0.09:
+                feedback['messages'].append('✓ 좋습니다! 목 스트레칭이 잘 되고 있습니다')
+            elif tilt_amount > 0.06:
+                feedback['messages'].append('✓ 조금 더 천천히 당겨보세요')
+            else:
+                feedback['has_warnings'] = True
+                feedback['messages'].append('→ 머리를 오른쪽으로 더 기울이세요')
+        elif nose_offset < -0.04:
+            feedback['has_warnings'] = True
+            feedback['messages'].append('⚠️ 반대 방향입니다. 오른쪽으로 기울이세요')
         else:
-            feedback['status'] = 'good'
+            feedback['has_warnings'] = True
+            feedback['messages'].append('→ 머리를 오른쪽 어깨 방향으로 천천히 기울이세요')
+
+        # 과도한 기울기 방지
+        if left_ear and right_ear:
+            ear_y_diff = right_ear['y'] - left_ear['y']
+            if ear_y_diff > 0.25:
+                feedback['has_warnings'] = True
+                feedback['messages'].append('⚠️ 너무 많이 기울였습니다. 천천히 돌아오세요')
+
+        if feedback['has_warnings']:
+            feedback['status'] = 'warning'
+
+    except Exception as e:
+        feedback['status'] = 'warning'
+        feedback['messages'].append(f'인식 오류: {str(e)}')
+
+    return feedback
+
+
+def feedback_shoulder_left(keypoints):
+    """어깨 왼쪽 스트레칭 피드백"""
+    feedback = {
+        'status': 'good',
+        'messages': [],
+        'corrections': {},
+        'angles': {},
+        'has_warnings': False
+    }
+
+    try:
+        left_shoulder = next((k for k in keypoints if k['name'] == 'left_shoulder'), None)
+        right_shoulder = next((k for k in keypoints if k['name'] == 'right_shoulder'), None)
+        left_elbow = next((k for k in keypoints if k['name'] == 'left_elbow'), None)
+        right_elbow = next((k for k in keypoints if k['name'] == 'right_elbow'), None)
+        left_wrist = next((k for k in keypoints if k['name'] == 'left_wrist'), None)
+
+        if not all([left_shoulder, right_shoulder]):
+            feedback['status'] = 'warning'
+            feedback['messages'].append('어깨가 잘 보이지 않습니다')
+            return feedback
+
+        # 어깨 수평 체크
+        shoulder_y_diff = abs(left_shoulder['y'] - right_shoulder['y'])
+        if shoulder_y_diff > 0.15:
+            feedback['has_warnings'] = True
+            feedback['messages'].append('⚠️ 어깨를 수평으로 유지하세요')
+
+        # 왼팔이 몸 앞으로 교차했는지 체크
+        if left_wrist and right_shoulder:
+            # 왼쪽 손목이 오른쪽 어깨 방향으로 이동
+            wrist_cross = left_wrist['x'] - right_shoulder['x']
+            if wrist_cross > -0.1:  # 충분히 교차
+                feedback['messages'].append('✓ 좋습니다! 어깨 스트레칭이 잘 되고 있습니다')
+            else:
+                feedback['has_warnings'] = True
+                feedback['messages'].append('→ 왼팔을 오른쪽으로 더 당겨보세요')
+
+        if not feedback['messages']:
+            feedback['messages'].append('→ 왼팔을 가슴 앞으로 교차시켜주세요')
+            feedback['has_warnings'] = True
+
+        if feedback['has_warnings']:
+            feedback['status'] = 'warning'
+
+    except Exception as e:
+        feedback['status'] = 'warning'
+        feedback['messages'].append(f'인식 오류: {str(e)}')
+
+    return feedback
+
+
+def feedback_shoulder_right(keypoints):
+    """어깨 오른쪽 스트레칭 피드백"""
+    feedback = {
+        'status': 'good',
+        'messages': [],
+        'corrections': {},
+        'angles': {},
+        'has_warnings': False
+    }
+
+    try:
+        left_shoulder = next((k for k in keypoints if k['name'] == 'left_shoulder'), None)
+        right_shoulder = next((k for k in keypoints if k['name'] == 'right_shoulder'), None)
+        right_elbow = next((k for k in keypoints if k['name'] == 'right_elbow'), None)
+        right_wrist = next((k for k in keypoints if k['name'] == 'right_wrist'), None)
+
+        if not all([left_shoulder, right_shoulder]):
+            feedback['status'] = 'warning'
+            feedback['messages'].append('어깨가 잘 보이지 않습니다')
+            return feedback
+
+        # 어깨 수평 체크
+        shoulder_y_diff = abs(left_shoulder['y'] - right_shoulder['y'])
+        if shoulder_y_diff > 0.15:
+            feedback['has_warnings'] = True
+            feedback['messages'].append('⚠️ 어깨를 수평으로 유지하세요')
+
+        # 오른팔이 몸 앞으로 교차했는지 체크
+        if right_wrist and left_shoulder:
+            # 오른쪽 손목이 왼쪽 어깨 방향으로 이동
+            wrist_cross = right_wrist['x'] - left_shoulder['x']
+            if wrist_cross < 0.1:  # 충분히 교차
+                feedback['messages'].append('✓ 좋습니다! 어깨 스트레칭이 잘 되고 있습니다')
+            else:
+                feedback['has_warnings'] = True
+                feedback['messages'].append('→ 오른팔을 왼쪽으로 더 당겨보세요')
+
+        if not feedback['messages']:
+            feedback['messages'].append('→ 오른팔을 가슴 앞으로 교차시켜주세요')
+            feedback['has_warnings'] = True
+
+        if feedback['has_warnings']:
+            feedback['status'] = 'warning'
 
     except Exception as e:
         feedback['status'] = 'warning'
